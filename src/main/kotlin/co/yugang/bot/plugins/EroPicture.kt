@@ -6,9 +6,11 @@ import co.yugang.bot.utils.ClassTypeHelper
 import co.yugang.bot.utils.GsonUtils
 import co.yugang.bot.utils.parseString
 import com.google.gson.annotations.SerializedName
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import net.mamoe.mirai.contact.Group
 import net.mamoe.mirai.message.GroupMessageEvent
 import net.mamoe.mirai.message.data.Image
@@ -108,8 +110,7 @@ class EroPicture : BasePlugin("色图机") {
                         try {
                             lastTime = now
                             group?.let {
-                                val id = URL(picUrl).openStream().uploadAsImage(it).imageId
-                                it.sendMessage(Image(id))
+                                URL(picUrl).openStream().sendAsImageTo(it)
                             }
                         } catch (e: Throwable) {
                             group?.sendMessage("图片发送失败")
