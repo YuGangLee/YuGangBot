@@ -24,7 +24,7 @@ suspend fun main() {
     }.alsoLogin()
 
     BotHelper.loadConfig()
-    plugins.add(EroPicture())
+    plugins.add(EroPicture().also { it.enableKeyMap = true })
     plugins.add(Repeater())
 
     bot.subscribeAlways<GroupMessageEvent> { message ->

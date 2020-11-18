@@ -2,6 +2,7 @@ package co.yugang.bot.plugins
 
 import co.yugang.bot.net.DefaultClient
 import co.yugang.bot.utils.BotHelper
+import co.yugang.bot.utils.ClassTypeHelper
 import co.yugang.bot.utils.GsonUtils
 import co.yugang.bot.utils.parseString
 import com.google.gson.annotations.SerializedName
@@ -11,6 +12,7 @@ import kotlinx.coroutines.flow.flow
 import net.mamoe.mirai.contact.Group
 import net.mamoe.mirai.message.GroupMessageEvent
 import net.mamoe.mirai.message.data.Image
+import net.mamoe.mirai.message.sendAsImageTo
 import net.mamoe.mirai.message.uploadAsImage
 import okhttp3.Request
 import java.io.File
@@ -20,6 +22,7 @@ import java.security.MessageDigest
 class EroPicture : BasePlugin("色图机") {
     companion object {
         var APIKEY_PATH = "res/apikey.txt"
+        var KEY_MAP_PATH = "res/ero_picture_key_map.json"
         var DEFAULT_CD = 15 * 1000
 
         private const val CODE_SUCCESS = 0
@@ -55,7 +58,25 @@ class EroPicture : BasePlugin("色图机") {
     private var group: Group? = null
     private var lastTime = 0L
 
+    private val keyMap = mutableMapOf<String, String>()
+
     private val md5 = MessageDigest.getInstance("MD5")
+
+    var enableKeyMap = false
+        set(value) {
+            field = value
+            keyMap.clear()
+            if (field) try {
+                val file = File(KEY_MAP_PATH)
+                val json = file.readText()
+                val keyMapList: List<KeyMap> = GsonUtils.instance.fromJson(json, ClassTypeHelper.typeOf<List<KeyMap>>())
+                keyMapList.forEach {
+                    keyMap[it.key] = it.place
+                }
+            } catch (e: Throwable) {
+                BotHelper.loge(e.toString())
+            }
+        }
 
     override suspend fun onMessage(message: GroupMessageEvent) {
         group = message.group
@@ -68,12 +89,14 @@ class EroPicture : BasePlugin("色图机") {
                         group?.sendMessage("色图机还有${(lastTime + DEFAULT_CD - now) / 1000}秒CD")
                         return@onMessage
                     }
-                    lastTime = now
-                    val key = msg.replaceFirst(head, "")
+                    var key = msg.replaceFirst(head, "")
                         .reversed()
                         .replaceFirst(tail.reversed(), "")
                         .reversed()
                         .trim()
+                    if (enableKeyMap && keyMap.keys.contains(key)) {
+                        key = keyMap[key] ?: ""
+                    }
                     val url = "$picApiPath&keyword=$key"
                     getPicture(url).catch { e ->
                         if (e is PictureException) {
@@ -83,8 +106,9 @@ class EroPicture : BasePlugin("色图机") {
                         }
                     }.collect { picUrl ->
                         try {
+                            lastTime = now
                             group?.let {
-                                val id = URL(picUrl).uploadAsImage(it).imageId
+                                val id = URL(picUrl).openStream().uploadAsImage(it).imageId
                                 it.sendMessage(Image(id))
                             }
                         } catch (e: Throwable) {
@@ -110,6 +134,8 @@ class EroPicture : BasePlugin("色图机") {
     }
 
     class PictureException(val code: Int) : Exception()
+
+    data class KeyMap(@SerializedName("key") val key: String, @SerializedName("place") val place: String)
 
     data class PictureResult(
         @SerializedName("code")
