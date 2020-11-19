@@ -1,6 +1,7 @@
 package co.yugang.bot
 
 import co.yugang.bot.plugins.EroPicture
+import co.yugang.bot.plugins.QuestionAnswer
 import co.yugang.bot.plugins.Repeater
 import co.yugang.bot.plugins.intf.IPlugin
 import co.yugang.bot.utils.BotHelper
@@ -25,6 +26,7 @@ suspend fun main() {
 
     BotHelper.loadConfig()
     plugins.add(EroPicture().also { it.enableKeyMap = true })
+    plugins.add(QuestionAnswer())
     plugins.add(Repeater())
 
     bot.subscribeAlways<GroupMessageEvent> { message ->

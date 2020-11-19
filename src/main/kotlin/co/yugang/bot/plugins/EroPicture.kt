@@ -6,6 +6,7 @@ import co.yugang.bot.utils.ClassTypeHelper
 import co.yugang.bot.utils.GsonUtils
 import co.yugang.bot.utils.parseString
 import com.google.gson.annotations.SerializedName
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
@@ -57,7 +58,6 @@ class EroPicture : BasePlugin("色图机") {
         }
     }
 
-    private var group: Group? = null
     private var lastTime = 0L
 
     private val keyMap = mutableMapOf<String, String>()
@@ -81,14 +81,14 @@ class EroPicture : BasePlugin("色图机") {
         }
 
     override suspend fun onMessage(message: GroupMessageEvent) {
-        group = message.group
+        val group = message.group
         val msg = message.message.parseString() ?: ""
         COMMAND_HEAD.forEach { head ->
             COMMAND_TAIL.forEach { tail ->
                 if (msg.startsWith(head) && msg.endsWith(tail)) {
                     val now = System.currentTimeMillis()
                     if (lastTime + DEFAULT_CD > now) {
-                        group?.sendMessage("色图机还有${(lastTime + DEFAULT_CD - now) / 1000}秒CD")
+                        group.sendMessage("色图机还有${(lastTime + DEFAULT_CD - now) / 1000 + 1}秒CD")
                         return@onMessage
                     }
                     var key = msg.replaceFirst(head, "")
@@ -102,18 +102,20 @@ class EroPicture : BasePlugin("色图机") {
                     val url = "$picApiPath&keyword=$key"
                     getPicture(url).catch { e ->
                         if (e is PictureException) {
-                            group?.sendMessage("${ERROR_CODE_MAP[e.code]}")
+                            group.sendMessage("${ERROR_CODE_MAP[e.code]}")
                         } else {
-                            group?.sendMessage("没拿到色图…")
+                            group.sendMessage("没拿到色图…")
                         }
                     }.collect { picUrl ->
-                        try {
-                            lastTime = now
-                            group?.let {
-                                URL(picUrl).openStream().sendAsImageTo(it)
+                        GlobalScope.launch(Dispatchers.IO) {
+                            try {
+                                lastTime = now
+                                group.let {
+                                    URL(picUrl).openStream().sendAsImageTo(it)
+                                }
+                            } catch (e: Throwable) {
+                                group.sendMessage("图片发送失败")
                             }
-                        } catch (e: Throwable) {
-                            group?.sendMessage("图片发送失败")
                         }
                     }
                 }
