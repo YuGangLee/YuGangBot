@@ -19,6 +19,7 @@ import net.mamoe.mirai.message.sendAsImageTo
 import net.mamoe.mirai.message.uploadAsImage
 import okhttp3.Request
 import java.io.File
+import java.net.URI
 import java.net.URL
 import java.security.MessageDigest
 
@@ -107,15 +108,13 @@ class EroPicture : BasePlugin("色图机") {
                             group.sendMessage("没拿到色图…")
                         }
                     }.collect { picUrl ->
-                        GlobalScope.launch(Dispatchers.IO) {
-                            try {
-                                lastTime = now
-                                group.let {
-                                    URL(picUrl).openStream().sendAsImageTo(it)
-                                }
-                            } catch (e: Throwable) {
-                                group.sendMessage("图片发送失败")
+                        try {
+                            lastTime = now
+                            group.let {
+                                URL(picUrl).openStream().sendAsImageTo(it)
                             }
+                        } catch (e: Throwable) {
+                            group.sendMessage("图片发送失败")
                         }
                     }
                 }
