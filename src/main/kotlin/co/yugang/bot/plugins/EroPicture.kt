@@ -8,20 +8,32 @@ import co.yugang.bot.utils.parseString
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import net.mamoe.mirai.contact.Group
 import net.mamoe.mirai.message.GroupMessageEvent
 import net.mamoe.mirai.message.data.Image
+import net.mamoe.mirai.message.data.MessageSourceBuilder
+import net.mamoe.mirai.message.data.buildMessageChain
+import net.mamoe.mirai.message.data.sendTo
 import net.mamoe.mirai.message.sendAsImageTo
 import net.mamoe.mirai.message.uploadAsImage
+import net.mamoe.mirai.utils.toExternalImage
+import net.mamoe.mirai.utils.upload
 import okhttp3.Request
 import java.io.File
 import java.net.URI
 import java.net.URL
 import java.security.MessageDigest
+import java.util.*
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.Executors
+import java.util.concurrent.ThreadPoolExecutor
 
 class EroPicture : BasePlugin("色图机") {
     companion object {
@@ -65,6 +77,8 @@ class EroPicture : BasePlugin("色图机") {
 
     private val md5 = MessageDigest.getInstance("MD5")
 
+    private val sendQueue = ConcurrentLinkedQueue<SendTask>()
+
     var enableKeyMap = false
         set(value) {
             field = value
@@ -81,17 +95,27 @@ class EroPicture : BasePlugin("色图机") {
             }
         }
 
+    init {
+        GlobalScope.launch(Dispatchers.IO) {
+            while (true) {
+                if (sendQueue.isEmpty()) {
+                    delay(1000)
+                } else {
+                    while (sendQueue.isNotEmpty()) {
+                        val task = sendQueue.poll()
+                        task.run()
+                    }
+                }
+            }
+        }
+    }
+
     override suspend fun onMessage(message: GroupMessageEvent) {
         val group = message.group
         val msg = message.message.parseString() ?: ""
         COMMAND_HEAD.forEach { head ->
             COMMAND_TAIL.forEach { tail ->
                 if (msg.startsWith(head) && msg.endsWith(tail)) {
-                    val now = System.currentTimeMillis()
-                    if (lastTime + DEFAULT_CD > now) {
-                        group.sendMessage("色图机还有${(lastTime + DEFAULT_CD - now) / 1000 + 1}秒CD")
-                        return@onMessage
-                    }
                     var key = msg.replaceFirst(head, "")
                         .reversed()
                         .replaceFirst(tail.reversed(), "")
@@ -100,42 +124,39 @@ class EroPicture : BasePlugin("色图机") {
                     if (enableKeyMap && keyMap.keys.contains(key)) {
                         key = keyMap[key] ?: ""
                     }
-                    val url = "$picApiPath&keyword=$key"
-                    getPicture(url).catch { e ->
-                        if (e is PictureException) {
-                            group.sendMessage("${ERROR_CODE_MAP[e.code]}")
-                        } else {
-                            group.sendMessage("没拿到色图…")
-                        }
-                    }.collect { picUrl ->
-                        try {
-                            lastTime = now
-                            group.let {
-                                URL(picUrl).openStream().sendAsImageTo(it)
-                            }
-                        } catch (e: Throwable) {
-                            group.sendMessage("图片发送失败")
-                        }
-                    }
+                    sendQueue.add(SendTask(group, key))
                 }
             }
         }
     }
 
-    private fun getPicture(url: String) = flow {
-        val response = DefaultClient.httpClient.newCall(Request.Builder().url(url).build()).execute()
-        val json = response.body?.string() ?: ""
-        val result = GsonUtils.instance.fromJson(json, PictureResult::class.java)
-        if (result.code == CODE_SUCCESS && result.picList.isNotEmpty()) {
-            emit(result.picList[0].url)
-        } else if (ERROR_CODE_MAP[result.code] != null) {
-            throw PictureException(result.code)
-        } else {
-            throw NullPointerException()
+    private inner class SendTask(val group: Group, val key: String) {
+        suspend fun run() {
+            val url = "$picApiPath&keyword=$key&r18=0"
+            val response = DefaultClient.httpClient.newCall(Request.Builder().url(url).build()).execute()
+            val json = response.body?.string() ?: ""
+            val result = GsonUtils.instance.fromJson(json, PictureResult::class.java)
+            if (result.code == CODE_SUCCESS && result.picList.isNotEmpty()) {
+                try {
+                    group.let {
+                        buildMessageChain {
+                            add("你点的${key}色图到了")
+                            add(URL(result.picList[0].url).openStream().toExternalImage().upload(group))
+                        }.sendTo(it)
+//                        URL(result.picList[0].url).openStream().sendAsImageTo(it)
+                    }
+                } catch (e: Throwable) {
+                    group.sendMessage("图片发送失败")
+                }
+            } else if (result.code == 404) {
+                group.sendMessage("找不到符合关键字${key}的色图")
+            } else if (ERROR_CODE_MAP[result.code] != null) {
+                group.sendMessage("${ERROR_CODE_MAP[result.code]}")
+            } else {
+                group.sendMessage("没拿到色图…")
+            }
         }
     }
-
-    class PictureException(val code: Int) : Exception()
 
     data class KeyMap(@SerializedName("key") val key: String, @SerializedName("place") val place: String)
 

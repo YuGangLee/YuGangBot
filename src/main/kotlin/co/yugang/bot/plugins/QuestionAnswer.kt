@@ -39,7 +39,7 @@ class QuestionAnswer : BasePlugin("人工智障") {
         questionAndAnswer.qaList.forEach { qa ->
             val match = when (qa.matchType.parseMatchType()) {
                 MatchType.FULL -> msg == qa.question
-                MatchType.REGULAR -> qa.question.toRegex().matches(msg)
+                MatchType.REGULAR -> qa.question.toRegex(RegexOption.IGNORE_CASE).matches(msg)
                 MatchType.PART -> msg.contains(qa.question)
                 else -> false
             }
